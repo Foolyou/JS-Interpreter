@@ -3207,6 +3207,38 @@ Interpreter.prototype.createSetter_ = function(func, left, value) {
   return state;
 };
 
+Interpreter.prototype.createCall_ = function (func, thisArg, args) {
+  if (!this.callStep_) {
+    throw Error('Unexpected call to createCall');
+  }
+  // Clear the call flag.
+  this.callStep_ = false;
+  // Normally `this` will be specified as the object component (o.x).
+  // Sometimes `this` is implicitly the global object (x).
+  var funcThis = Array.isArray(thisArg) ? thisArg[0] : this.globalObject;
+  var node = new this.nodeConstructor({options:{}});
+  node['type'] = 'CallExpression';
+  var state = new Interpreter.State(node,
+      this.stateStack[this.stateStack.length - 1].scope);
+  state.doneCallee_ = true;
+  state.funcThis_ = funcThis;
+  state.func_ = func;
+  state.doneArgs_ = true;
+  state.arguments_ = args;
+  return state;
+}
+
+Interpreter.prototype.callClosure = function (closure, thisArg, args) {
+  this.callStep_ = true;
+  const callExpressionState = this.createCall_(closure, thisArg, args);
+  callExpressionState.callFromNative = true;
+  callExpressionState.callFromNativeDone = false;
+  this.stateStack.push(callExpressionState);
+  while (!this.paused_ && this.step() && !callExpressionState.callFromNativeDone) {
+  }
+  return callExpressionState.value
+}
+
 /**
  * In non-strict mode `this` must be an object.
  * Must not be called in strict mode.
@@ -3731,6 +3763,10 @@ Interpreter.prototype['stepCallExpression'] = function(stack, state, node) {
       */
       this.throwException(this.TYPE_ERROR, func.class + ' is not callable');
     }
+  } else if (state.callFromNative) {
+    state.callFromNativeDone = true
+    this.stateStack.pop()
+    return;
   } else {
     // Execution complete.  Put the return value on the stack.
     stack.pop();
@@ -4451,4 +4487,4 @@ Interpreter.prototype['pseudoToNative'] = Interpreter.prototype.pseudoToNative;
 Interpreter.prototype['getGlobalScope'] = Interpreter.prototype.getGlobalScope;
 Interpreter.prototype['getStateStack'] = Interpreter.prototype.getStateStack;
 Interpreter.prototype['setStateStack'] = Interpreter.prototype.setStateStack;
-
+Interpreter.prototype['callClosure'] = Interpreter.prototype.callClosure;
